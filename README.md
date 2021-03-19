@@ -1,11 +1,6 @@
-## My Project
+## Upgrade RDS Oracle database engine with minimal downtime using AWS DMS
 
-TODO: Fill this README out!
-
-Be sure to:
-
-* Change the title in this README
-* Edit your repository description on GitHub
+Sample scripts for using Amazon RDS for Oracle with AWS Database Migration Service to upgrade the database engine with minimal downtime.
 
 ## Security
 
@@ -14,4 +9,3 @@ See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more inform
 ## License
 
 This library is licensed under the MIT-0 License. See the LICENSE file.
-

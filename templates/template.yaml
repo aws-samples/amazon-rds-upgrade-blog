@@ -1,0 +1,543 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: CloudFormation template that will deploy all AWS resources for upgrading RDS Oracle demo
+
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+
+# Permission is hereby granted, free of charge, to any person obtaining a copy of this
+# software and associated documentation files (the "Software"), to deal in the Software
+# without restriction, including without limitation the rights to use, copy, modify,
+# merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+# permit persons to whom the Software is furnished to do so.
+
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+# PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+# HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+# SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Parameters:
+  AmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Description: Latest AMI ID
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+    AllowedValues:
+      - /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+  InstanceType:
+    Type: String
+    Default: t3.medium
+    Description: Instance type
+    AllowedValues:
+      - t3.small
+      - t3.medium
+      - t3.large
+      - m5.xlarge
+      - m5.2xlarge
+      - m5.4xlarge
+  DBVersion:
+    Type: String
+    Description: Database engine version
+    Default: 19.0.0.0.ru-2020-07.rur-2020-07.r1  
+  VpcCidr:
+    Description: VPC IP range
+    Type: String
+    Default: 10.192.0.0/16
+  PublicSubnetACidr:
+    Description: Public subnet A IP range
+    Type: String
+    Default: 10.192.0.0/20
+  PublicSubnetBCidr:
+    Description: Public subnet B IP range
+    Type: String
+    Default: 10.192.16.0/20
+  PrivateSubnetACidr:
+    Description: Private subnet A IP range
+    Type: String
+    Default: 10.192.32.0/20
+  PrivateSubnetBCidr:
+    Description: Private subnet B IP range
+    Type: String
+    Default: 10.192.48.0/20
+  DBName:
+    Default: ORADB
+    Description: Database name
+    Type: String
+    MinLength: 1
+    MaxLength: 8
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9]*"
+    ConstraintDescription: Must begin with a letter and contain only alphanumeric characters.
+  DBUser:
+    NoEcho: true
+    Description: Database admin username
+    Type: String
+    MinLength: 1
+    MaxLength: 16
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9]*"
+    ConstraintDescription: Must begin with a letter and contain only alphanumeric characters.
+  DBPassword:
+    NoEcho: true
+    Description: Database admin password
+    Type: String
+    MinLength: 1
+    MaxLength: 41
+    AllowedPattern: "[a-zA-Z0-9]+"
+    ConstraintDescription: Must contain only alphanumeric characters.
+  DBAllocatedStorage:
+    Default: 10
+    Description: Size of the database (Gb)
+    Type: Number
+    MinValue: 5
+    MaxValue: 1024
+    ConstraintDescription: Must be between 5 and 1024Gb.
+  DBInstanceClass:
+    Description: Database instance type
+    Type: String
+    Default: db.t3.medium
+    AllowedValues:
+    - db.m5.large
+    - db.m5.xlarge
+    - db.m5.2xlarge
+    - db.m5.4xlarge
+    - db.m5.8xlarge
+    - db.r5.large
+    - db.r5.xlarge
+    - db.r5.2xlarge
+    - db.r5.4xlarge
+    - db.r5.8xlarge
+    - db.t3.micro
+    - db.t3.small
+    - db.t3.medium
+    - db.t3.large
+    ConstraintDescription: Must select a valid database instance type.
+  MultiAZ:
+    Description: Multi-AZ master database
+    Type: String
+    Default: false
+    AllowedValues:
+    - true
+    - false
+    ConstraintDescription: Must be true or false.
+  OracleClientUrl:
+    Description: URL for downloading Oracle client tools
+    Type: String
+    Default: https://download.oracle.com/otn_software/linux/instantclient/211000/oracle-instantclient-basic-21.1.0.0.0-1.x86_64.rpm
+  SqlPlusUrl:
+    Description: URL for downloading SQLPlus client tools
+    Type: String
+    Default: https://download.oracle.com/otn_software/linux/instantclient/211000/oracle-instantclient-sqlplus-21.1.0.0.0-1.x86_64.rpm
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: RDS Configuration
+        Parameters:
+          - DBName
+          - DBUser
+          - DBPassword
+          - DBAllocatedStorage
+          - DBInstanceClass
+          - MultiAZ
+      - Label:
+          default: EC2 Configuration
+        Parameters:
+          - AmiId
+          - InstanceType
+          - DBVersion
+      - Label:
+          default: VPC Configuration
+        Parameters:
+          - VpcCidr
+          - PublicSubnetACidr
+          - PublicSubnetBCidr
+          - PrivateSubnetACidr
+          - PrivateSubnetBCidr
+      - Label:
+          default: Oracle downloads
+        Parameters:
+          - OracleClientUrl
+          - SqlPlusUrl
+
+Resources:
+  # Network resources
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      Tags:
+      - Key: Name
+        Value: !Sub '${AWS::StackName} - VPC'
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+      - Key: Name
+        Value: !Sub '${AWS::StackName} - Internet gateway'
+  VpcGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref Vpc
+      InternetGatewayId: !Ref InternetGateway
+  SubnetAPublic:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: !Ref PublicSubnetACidr
+      MapPublicIpOnLaunch: true
+      VpcId: !Ref Vpc
+      Tags:
+      - Key: Name
+        Value: !Sub '${AWS::StackName} - Public subnet A'
+      - Key: Reach
+        Value: public
+  SubnetAPrivate:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: !Ref PrivateSubnetACidr
+      VpcId: !Ref Vpc
+      Tags:
+      - Key: Name
+        Value: !Sub '${AWS::StackName} - Private subnet A'
+      - Key: Reach
+        Value: private
+  SubnetBPublic:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: !Ref PublicSubnetBCidr
+      MapPublicIpOnLaunch: true
+      VpcId: !Ref Vpc
+      Tags:
+      - Key: Name
+        Value: !Sub '${AWS::StackName} - Public subnet B'
+      - Key: Reach
+        Value: public
+  SubnetBPrivate:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: !Ref PrivateSubnetBCidr
+      VpcId: !Ref Vpc
+      Tags:
+      - Key: Name
+        Value: !Sub '${AWS::StackName} - Private subnet B'
+      - Key: Reach
+        Value: private
+  RouteTableAPublic: 
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+      - Key: Name
+        Value: !Sub '${AWS::StackName} - Public route table A'
+  RouteTableAPrivate: 
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+      - Key: Name
+        Value: !Sub '${AWS::StackName} - Private route table A'
+  RouteTableBPublic:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+      - Key: Name
+        Value: !Sub '${AWS::StackName} - Public route table B'
+  RouteTableBPrivate:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+      - Key: Name
+        Value: !Sub '${AWS::StackName} - Private route table B'
+  RouteTableAssociationAPublic:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SubnetAPublic
+      RouteTableId: !Ref RouteTableAPublic
+  RouteTableAssociationAPrivate:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SubnetAPrivate
+      RouteTableId: !Ref RouteTableAPrivate
+  RouteTableAssociationBPublic:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SubnetBPublic
+      RouteTableId: !Ref RouteTableBPublic
+  RouteTableAssociationBPrivate:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SubnetBPrivate
+      RouteTableId: !Ref RouteTableBPrivate
+  RouteTableAPublicInternetRoute: 
+    Type: AWS::EC2::Route
+    DependsOn: VpcGatewayAttachment
+    Properties:
+      RouteTableId: !Ref RouteTableAPublic
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+  RouteTableBPublicInternetRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VpcGatewayAttachment
+    Properties:
+      RouteTableId: !Ref RouteTableBPublic
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+  NatGatewayEip:
+    Type: AWS::EC2::EIP
+    DependsOn: VpcGatewayAttachment
+    Properties:
+      Domain: vpc
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGatewayEip.AllocationId
+      SubnetId: !Ref SubnetAPublic
+  RouteANAT:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref RouteTableAPrivate
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+  RouteBNAT:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref RouteTableBPrivate
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+  SecurityGroupDefault:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub '${AWS::StackName} - EC2 security group'
+      VpcId: !Ref Vpc
+      SecurityGroupEgress:
+      - IpProtocol: -1
+        CidrIp: 0.0.0.0/0
+  SecurityGroupDatabase:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn: SecurityGroupDefault
+    Properties:
+      GroupDescription: !Sub '${AWS::StackName} - Oracle access security group'
+      VpcId: !Ref Vpc
+      SecurityGroupEgress:
+      - IpProtocol: -1
+        CidrIp: 0.0.0.0/0
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 1521
+        ToPort: 1521
+        SourceSecurityGroupId: !GetAtt SecurityGroupDefault.GroupId
+
+  # Compute resources
+  Ec2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles: [ !Ref Ec2InstanceRole ]
+  Ec2InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [ ec2.amazonaws.com ]
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: Ec2InstanceRolePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                - logs:CreateLogStream
+                - logs:CreateLogGroup
+                - logs:PutLogEvents
+                - logs:DescribeLogGroups
+                - logs:DescribeLogStreams
+                - logs:FilterLogEvents
+                - logs:GetLogEvents
+                Resource:
+                - arn:aws:logs:*:*:*
+              - Effect: Allow
+                Action:
+                - rds:*
+                Resource:
+                - !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:${RdsPrimary}'
+                - !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:${RdsReplica}'
+              - Effect: Allow
+                Action: dms:*
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                - kms:ListAliases
+                - kms:DescribeKey
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                - iam:GetRole
+                - iam:PassRole
+                - iam:CreateRole
+                - iam:AttachRolePolicy
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                - ec2:DescribeVpcs
+                - ec2:DescribeInternetGateways
+                - ec2:DescribeAvailabilityZones
+                - ec2:DescribeSubnets
+                - ec2:DescribeSecurityGroups
+                - ec2:ModifyNetworkInterfaceAttribute
+                - ec2:CreateNetworkInterface
+                - ec2:DeleteNetworkInterface
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                - cloudwatch:Get*
+                - cloudwatch:List*
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                - cloudformation:CreateStack
+                - cloudformation:DescribeStacks
+                - cloudformation:DescribeStackEvents
+                - cloudformation:DescribeStackResources
+                - cloudformation:GetTemplate
+                - cloudformation:ValidateTemplate
+                - cloudformation:DeleteStack
+                - cloudformation:UpdateStack
+                - cloudformation:CreateChangeSet
+                Resource: '*'
+  Ec2ElasticIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      InstanceId: !Ref Ec2Workshop
+  Ec2Workshop:
+    Type: AWS::EC2::Instance
+    DependsOn: NatGateway
+    Properties:
+      ImageId: !Ref AmiId
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref Ec2InstanceProfile
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeviceIndex: 0
+          GroupSet:
+            - !Ref SecurityGroupDefault
+          SubnetId: !Ref SubnetAPublic
+      BlockDeviceMappings:
+        - DeviceName: /dev/sdf
+          Ebs:
+            VolumeSize: 16
+            VolumeType: gp2
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -xe
+          yum update -y
+
+          # install git and python libraries
+          yum install -y git
+          yum install -y python3
+          yum install -y jq
+          pip3 install boto3
+
+          # mount ebs volume
+          mkfs -t xfs /dev/nvme1n1
+          mkdir /workshop
+          mount /dev/nvme1n1 /workshop
+
+          # download and install oracle client tools
+          curl ${OracleClientUrl} --output instant-client.rpm
+          rpm -i instant-client.rpm
+          curl ${SqlPlusUrl} --output instant-client-sqlplus.rpm
+          rpm -i instant-client-sqlplus.rpm
+
+          # set ec2-user owner
+          chown -R ec2-user /workshop/
+
+          # set environment variables
+          echo "export AWS_REGION=${AWS::Region}" >> /etc/environment
+          echo "export CFSTACK_NAME=${AWS::StackName}" >> /etc/environment
+          echo "export SRC_RDS_ID=${RdsPrimary}" >> /etc/environment
+          echo "export SRC_HOST=${RdsPrimary.Endpoint.Address}" >> /etc/environment
+          echo "export SRC_PORT=${RdsPrimary.Endpoint.Port}" >> /etc/environment
+          echo "export TGT_RDS_ID=${RdsReplica}" >> /etc/environment
+          echo "export TGT_HOST=${RdsReplica.Endpoint.Address}" >> /etc/environment
+          echo "export TGT_PORT=${RdsReplica.Endpoint.Port}" >> /etc/environment
+          echo "export DB_NAME=${DBName}" >> /etc/environment
+          echo "export REP_SG=${SecurityGroupDefault.GroupId}" >> /etc/environment
+          echo "export SUBNET_A=${SubnetAPublic}" >> /etc/environment
+          echo "export SUBNET_B=${SubnetBPublic}" >> /etc/environment
+      Tags:
+      - Key: Name
+        Value: !Sub '${AWS::StackName} - EC2 instance'
+
+  # Database resources
+  RdsPrimary:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBName: !Ref DBName
+      DBInstanceIdentifier: !Sub '${AWS::StackName}-primary'
+      AllocatedStorage: !Ref DBAllocatedStorage
+      StorageType: gp2
+      DBInstanceClass: !Ref DBInstanceClass
+      Engine : oracle-ee
+      EngineVersion: !Ref DBVersion
+      LicenseModel : bring-your-own-license      
+      MasterUsername: !Ref DBUser
+      MasterUserPassword: !Ref DBPassword
+      MultiAZ: !Ref MultiAZ
+      DBSubnetGroupName: !Ref RdsSubnetGroup
+      Tags:
+      - Key: Name
+        Value: !Sub '${AWS::StackName} - Primary DB instance'
+      VPCSecurityGroups: 
+      - !GetAtt SecurityGroupDatabase.GroupId
+    DeletionPolicy: Snapshot
+  RdsReplica:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Sub '${AWS::StackName}-replica'
+      SourceDBInstanceIdentifier: !Ref RdsPrimary
+      StorageType: gp2
+      DBInstanceClass: !Ref DBInstanceClass
+      Tags:
+      - Key: Name
+        Value: !Sub '${AWS::StackName} - Replica DB instance'
+      VPCSecurityGroups: 
+      - !GetAtt SecurityGroupDatabase.GroupId
+  RdsSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: !Sub '${AWS::StackName} - DB subnet group'
+      SubnetIds:
+      - !Ref SubnetAPrivate
+      - !Ref SubnetBPrivate
+
+Outputs:
+  SessionManagerUrl:
+    Description: Session Manager Console
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/systems-manager/session-manager/start-session?region=${AWS::Region}
+  PrimaryEndpointAddress:
+    Description: Full connection endpoint for the database primary instance
+    Value: !Sub '${RdsPrimary.Endpoint.Address}:${RdsPrimary.Endpoint.Port}/${DBName}'
+    Export:
+      Name: !Sub '${AWS::StackName}-PrimaryEndpointAddress'
+  ReplicaEndpointAddress:
+    Description: Full connection endpoint for the database read replica
+    Value: !Sub '${RdsReplica.Endpoint.Address}:${RdsReplica.Endpoint.Port}/${DBName}'
+    Export:
+      Name: !Sub '${AWS::StackName}-ReplicaEndpointAddress'
+  Ec2SecurityGroup:
+    Description: Security group for EC2 and replication instance
+    Value: !GetAtt SecurityGroupDefault.GroupId
+    Export:
+      Name: !Sub '${AWS::StackName}-Ec2SecurityGroup'
