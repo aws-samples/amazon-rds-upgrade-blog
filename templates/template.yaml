@@ -377,18 +377,6 @@ Resources:
                 Resource: '*'
               - Effect: Allow
                 Action:
-                - kms:ListAliases
-                - kms:DescribeKey
-                Resource: '*'
-              - Effect: Allow
-                Action:
-                - iam:GetRole
-                - iam:PassRole
-                - iam:CreateRole
-                - iam:AttachRolePolicy
-                Resource: '*'
-              - Effect: Allow
-                Action:
                 - ec2:DescribeVpcs
                 - ec2:DescribeInternetGateways
                 - ec2:DescribeAvailabilityZones
