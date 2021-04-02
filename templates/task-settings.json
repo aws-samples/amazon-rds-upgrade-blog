@@ -1,6 +1,6 @@
 {
   "TargetMetadata": {
-    "TargetSchema": "ADMIN",
+    "TargetSchema": "<<USERNAME>>",
     "SupportLobs": true,
     "FullLobMode": false,
     "LobChunkSize": 64,

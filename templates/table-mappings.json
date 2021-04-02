@@ -5,7 +5,7 @@
       "rule-id": "1", 
       "rule-name": "1", 
       "object-locator": {
-        "schema-name": "ADMIN", 
+        "schema-name": "<<USERNAME>>", 
         "table-name": "%"
       }, 
       "rule-action": "include"
