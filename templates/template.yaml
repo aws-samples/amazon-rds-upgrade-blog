@@ -368,12 +368,28 @@ Resources:
                 - arn:aws:logs:*:*:*
               - Effect: Allow
                 Action:
-                - rds:*
+                - rds:Create*
+                - rds:Describe*
+                - rds:Modify*
+                - rds:Restore*
+                - rds:PromoteReadReplica
+                - rds:RebootDBInstance
+                - rds:StartDBInstance
+                - rds:StopDBInstance
                 Resource:
                 - !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:${RdsPrimary}'
                 - !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:${RdsReplica}'
               - Effect: Allow
-                Action: dms:*
+                Action: 
+                - dms:Create*
+                - dms:Delete*
+                - dms:Describe*
+                - dms:Modify*
+                - dms:Start*
+                - dms:Stop*
+                - dms:RebootReplicationInstance
+                - dms:RefreshSchemas
+                - dms:TestConnection
                 Resource: '*'
               - Effect: Allow
                 Action:
@@ -476,12 +492,15 @@ Resources:
       DBInstanceIdentifier: !Sub '${AWS::StackName}-primary'
       AllocatedStorage: !Ref DBAllocatedStorage
       StorageType: gp2
+      StorageEncrypted: true
+      PubliclyAccessible: false
       DBInstanceClass: !Ref DBInstanceClass
       Engine : oracle-ee
       EngineVersion: !Ref DBVersion
       LicenseModel : bring-your-own-license      
       MasterUsername: !Ref DBUser
       MasterUserPassword: !Ref DBPassword
+      DeletionProtection: true
       MultiAZ: !Ref MultiAZ
       DBSubnetGroupName: !Ref RdsSubnetGroup
       Tags:
@@ -496,7 +515,10 @@ Resources:
       DBInstanceIdentifier: !Sub '${AWS::StackName}-replica'
       SourceDBInstanceIdentifier: !Ref RdsPrimary
       StorageType: gp2
+      StorageEncrypted: true
+      PubliclyAccessible: false
       DBInstanceClass: !Ref DBInstanceClass
+      DeletionProtection: true
       Tags:
       - Key: Name
         Value: !Sub '${AWS::StackName} - Replica DB instance'
