@@ -102,19 +102,10 @@
     "MemoryKeepTime": 60,
     "StatementCacheSize": 50
   },
-  "ValidationSettings": {
-    "EnableValidation": false,
-    "ValidationMode": "ROW_LEVEL",
-    "ThreadCount": 5,
-    "FailureMaxCount": 10000,
-    "TableFailureMaxCount": 1000,
-    "HandleCollationDiff": false,
-    "ValidationOnly": false,
-    "RecordFailureDelayLimitInMinutes": 0,
-    "SkipLobColumns": false,
-    "ValidationPartialLobSize": 0,
-    "ValidationQueryCdcDelaySeconds": 0,
-    "PartitionSize": 10000
+  "ValidationSettings":   {
+    "EnableValidation": true,
+    "ThreadCount": 8,
+    "TableFailureMaxCount": 1
   },
   "PostProcessingRules": null,
   "CharacterSetSettings": null,
